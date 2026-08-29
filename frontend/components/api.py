@@ -1,7 +1,13 @@
+import os
+
 import httpx
 import streamlit as st
 
-BACKEND = "http://127.0.0.1:8000"
+# Falls back to localhost for the zero-config local dev flow, but respects
+# BACKEND_URL (same variable the backend reads from .env) so Docker/Render
+# deployments -- where Streamlit and FastAPI are not both on 127.0.0.1 --
+# work without editing source.
+BACKEND = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000")
 
 
 def api() -> str:
