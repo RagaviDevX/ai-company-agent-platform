@@ -1,0 +1,16 @@
+---
+description: AI Company stack, free-model routing, and project conventions
+alwaysApply: true
+---
+
+# AI Company conventions
+
+- This repo is a multi-agent platform: FastAPI backend, Streamlit dashboard, LangGraph workflow, LiteLLM routing.
+- Never add OpenAI, Anthropic, or Gemini APIs. Route only through Groq, OpenRouter free models, Hugging Face, or local Ollama.
+- Keep secrets in `.env`. Never commit API keys.
+- SQLite is short-term/conversation memory. Qdrant (local path `qdrant_data/`) is long-term/RAG.
+- Embeddings: `BAAI/bge-small-en-v1.5` via sentence-transformers.
+- Agent system prompts live in `backend/prompts/`. Update the prompt file instead of hard-coding long instructions in Python.
+- The company graph is `backend/graph/workflow.py`. Add new specialists as graph nodes plus a prompt file.
+- The Python tool is arithmetic-only (`safe_calculate`). Do not add unrestricted `exec`/`eval` of model-generated code.
+- Frontend pages call FastAPI; do not duplicate agent logic in Streamlit.
