@@ -13,8 +13,17 @@ _CLIENT: QdrantClient | None = None
 def get_client() -> QdrantClient:
     global _CLIENT
     if _CLIENT is None:
-        ensure_dirs()
-        _CLIENT = QdrantClient(path=settings.qdrant_path)
+        if settings.qdrant_url:
+            # Talk to a real Qdrant server (e.g. the one started by
+            # `docker compose up -d`) when QDRANT_URL is configured.
+            _CLIENT = QdrantClient(url=settings.qdrant_url)
+        else:
+            # Zero-config default: embedded, on-disk Qdrant. Note this mode
+            # locks the storage directory to a single process, so it is not
+            # safe to combine with QDRANT_URL unset across multiple worker
+            # processes (e.g. `uvicorn --workers N`).
+            ensure_dirs()
+            _CLIENT = QdrantClient(path=settings.qdrant_path)
     return _CLIENT
 
 
