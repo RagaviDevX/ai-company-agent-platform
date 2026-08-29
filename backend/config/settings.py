@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     sqlite_db: str = str(ROOT / "database" / "memory.db")
     qdrant_path: str = str(ROOT / "qdrant_data")
+    qdrant_url: str = ""  # e.g. http://localhost:6333 -- if set, used instead of qdrant_path
     uploads_dir: str = str(ROOT / "uploads")
     logs_dir: str = str(ROOT / "logs")
     prompts_dir: str = str(ROOT / "backend" / "prompts")
@@ -36,6 +37,7 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-small-en-v1.5"
 
     collection_name: str = "ai_company_docs"
+    max_upload_mb: int = 25
 
 
 settings = Settings()
