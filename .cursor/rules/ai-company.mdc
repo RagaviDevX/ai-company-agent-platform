@@ -1,16 +1,208 @@
 ---
-description: AI Company stack, free-model routing, and project conventions
+description: AI Company Agent Platform - Production Rules
 alwaysApply: true
 ---
 
-# AI Company conventions
+# 🤖 AI Company Agent Platform Rules
 
-- This repo is a multi-agent platform: FastAPI backend, Streamlit dashboard, LangGraph workflow, LiteLLM routing.
-- Never add OpenAI, Anthropic, or Gemini APIs. Route only through Groq, OpenRouter free models, Hugging Face, or local Ollama.
-- Keep secrets in `.env`. Never commit API keys.
-- SQLite is short-term/conversation memory. Qdrant (local path `qdrant_data/`) is long-term/RAG.
-- Embeddings: `BAAI/bge-small-en-v1.5` via sentence-transformers.
-- Agent system prompts live in `backend/prompts/`. Update the prompt file instead of hard-coding long instructions in Python.
-- The company graph is `backend/graph/workflow.py`. Add new specialists as graph nodes plus a prompt file.
-- The Python tool is arithmetic-only (`safe_calculate`). Do not add unrestricted `exec`/`eval` of model-generated code.
-- Frontend pages call FastAPI; do not duplicate agent logic in Streamlit.
+You are a Senior AI Engineer building a production-grade Multi-Agent AI Platform.
+
+## Project Stack
+
+- Python 3.12
+- FastAPI
+- Streamlit
+- LangGraph
+- LiteLLM
+- SQLite
+- Qdrant
+- HuggingFace Embeddings
+- Groq API
+- OpenRouter API
+
+## AI Model Rules
+
+Never use:
+- OpenAI API
+- Anthropic API
+- Gemini API
+
+Always route LLMs through LiteLLM.
+
+### Planner
+DeepSeek V3 via OpenRouter.
+
+### Coding
+Qwen Coder via Groq.
+
+### Reasoning
+Llama 3.3 70B via Groq.
+
+### Vision
+Llama Vision via Groq.
+
+### Embeddings
+BAAI/bge-small-en-v1.5 using sentence-transformers.
+
+## Architecture Rules
+
+This project follows modular architecture.
+
+backend/
+    agents/
+    api/
+    graph/
+    memory/
+    models/
+    prompts/
+    rag/
+    tools/
+    utils/
+
+frontend/
+    pages/
+    components/
+
+## Agent Rules
+
+Each AI agent must live in its own file.
+
+Example:
+
+agents/
+    planner_agent.py
+    research_agent.py
+    coder_agent.py
+    reviewer_agent.py
+    database_agent.py
+    memory_agent.py
+    vision_agent.py
+    qa_agent.py
+
+Each agent must have:
+
+- System prompt.
+- execute() function.
+- Pydantic response model.
+- Logging.
+
+## Prompt Rules
+
+Never hardcode long prompts inside Python.
+
+Store prompts inside:
+
+backend/prompts/
+
+One prompt file per agent.
+
+## Memory Rules
+
+Short-term memory:
+
+SQLite.
+
+Long-term memory:
+
+Qdrant Vector Database.
+
+Never mix business logic with memory logic.
+
+## RAG Rules
+
+Pipeline order:
+
+Document
+→ Chunk
+→ Embed
+→ Store
+→ Retrieve
+→ Inject Context
+→ LLM
+
+Chunk size configurable.
+
+Embeddings stored in Qdrant.
+
+## API Rules
+
+Use async FastAPI routes.
+
+Return Pydantic models.
+
+Never return raw dictionaries from API endpoints.
+
+## Streamlit Rules
+
+Frontend contains UI only.
+
+Do not place AI logic inside Streamlit pages.
+
+Call FastAPI endpoints.
+
+## Security Rules
+
+Never commit:
+
+.env
+API Keys
+SQLite databases
+Qdrant storage
+Logs
+
+Always use environment variables.
+
+## Code Quality
+
+- Type hints everywhere.
+- Google-style docstrings.
+- Logging instead of print().
+- Modular reusable functions.
+- No duplicate code.
+- Follow PEP8.
+
+## Git Rules
+
+Every feature should be committed separately.
+
+Example commits:
+
+feat(planner): add CEO planner agent
+feat(memory): add sqlite memory
+feat(rag): implement qdrant retrieval
+feat(ui): add streamlit dashboard
+fix(api): resolve router bug
+
+## Documentation Rules
+
+Every module needs:
+
+- Purpose.
+- Inputs.
+- Outputs.
+- Example usage.
+
+README must stay updated with new features.
+
+## Testing Rules
+
+Every major module gets a test inside:
+
+tests/
+
+Use pytest-compatible structure.
+
+## Future Expansion
+
+Architecture should support:
+
+- Voice Agent
+- Vision Agent
+- Email Agent
+- WhatsApp Agent
+- GitHub Agent
+- Calendar Agent
+- Deployment Agent
+- MCP Tool Integration
+
+Always keep the project scalable.
