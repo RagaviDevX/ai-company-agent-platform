@@ -35,6 +35,30 @@ class CompanyState(TypedDict, total=False):
     final: str
 
 
+# Module-level singletons: each run_company() call traverses 9 graph nodes,
+# 3 of which previously did `MemoryStore()` / `RAGPipeline()` themselves.
+# MemoryStore() re-executes the full schema script + a seed INSERT on every
+# construction, and RAGPipeline()/VectorStore() re-checks the Qdrant
+# collection on every construction, so a single request was paying that
+# setup cost 3-4 times. Reuse one instance per process instead.
+_memory_store: MemoryStore | None = None
+_rag_pipeline: RAGPipeline | None = None
+
+
+def _memory() -> MemoryStore:
+    global _memory_store
+    if _memory_store is None:
+        _memory_store = MemoryStore()
+    return _memory_store
+
+
+def _rag() -> RAGPipeline:
+    global _rag_pipeline
+    if _rag_pipeline is None:
+        _rag_pipeline = RAGPipeline()
+    return _rag_pipeline
+
+
 def _log(state: CompanyState, name: str) -> list[str]:
     logs = list(state.get("logs") or [])
     logs.append(name)
@@ -42,15 +66,13 @@ def _log(state: CompanyState, name: str) -> list[str]:
 
 
 def node_rag(state: CompanyState) -> CompanyState:
-    rag = RAGPipeline()
-    context = rag.context_block(state["task"])
+    context = _rag().context_block(state["task"])
     answer = rag_answer(state["task"], context) if context else ""
     return {"rag_context": context, "rag_answer": answer, "logs": _log(state, "RAG")}
 
 
 def node_plan(state: CompanyState) -> CompanyState:
-    memory = MemoryStore()
-    mems = memory.list_memories(state.get("user_id") or settings.default_user_id)
+    mems = _memory().list_memories(state.get("user_id") or settings.default_user_id)
     mem_text = "\n".join(m["memory"] for m in mems[:20])
     plan = plan_task(state["task"], state.get("rag_context") or "", mem_text)
     return {"plan": plan, "logs": _log(state, "CEO Planner")}
@@ -98,7 +120,7 @@ def node_review(state: CompanyState) -> CompanyState:
 def node_memory(state: CompanyState) -> CompanyState:
     user_id = state.get("user_id") or settings.default_user_id
     notes = extract_memories(state["task"], state.get("final") or "")
-    store = MemoryStore()
+    store = _memory()
     if notes and "API keys are not configured" not in notes:
         store.add_memory(user_id, notes)
     store.add_conversation(user_id, state["task"], state.get("final") or "")
