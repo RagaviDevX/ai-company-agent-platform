@@ -4,6 +4,7 @@ import httpx
 from groq import Groq
 
 from backend.config.settings import settings
+from backend.memory.store import MemoryStore
 from backend.utils.logger import write_log
 
 MODELS = {
@@ -14,6 +15,41 @@ MODELS = {
 }
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# Roles whose configured model is a text-only chat model. `chat()` only
+# ever falls back to `settings.reasoning_model` for these roles: falling
+# back for "vision" would resend an image_url content block to a
+# text-only model, which fails again (or errors in a confusing way).
+_TEXT_ROLES = {"planner", "coder", "reasoning"}
+
+_STORE: MemoryStore | None = None
+
+
+def _store() -> MemoryStore:
+    global _STORE
+    if _STORE is None:
+        _STORE = MemoryStore()
+    return _STORE
+
+
+def _record(role: str, model: str, input_text: str, output_text: str) -> None:
+    """Persist a call to both the file log and the `agent_logs` table.
+
+    Logging must never break a model call: DB failures are swallowed after
+    the file log (which has no external dependency) has already succeeded.
+    """
+    write_log(
+        {
+            "agent": role,
+            "model": model,
+            "input_preview": input_text[:400],
+            "output_preview": output_text[:400],
+        }
+    )
+    try:
+        _store().add_agent_log(None, role, model, input_text, output_text)
+    except Exception:
+        pass
 
 
 def _provider(model: str) -> str:
@@ -103,6 +139,8 @@ def chat(
     max_tokens: int = 4096,
 ) -> str:
     model = MODELS.get(role, settings.reasoning_model)
+    input_preview = str(messages[-1].get("content", "")) if messages else ""
+
     missing = _missing_keys_message(model)
     if missing:
         write_log({"agent": role, "model": model, "error": "missing_api_key"})
@@ -110,24 +148,29 @@ def chat(
 
     try:
         text = _complete(model, messages, temperature, max_tokens)
-        write_log(
-            {
-                "agent": role,
-                "model": model,
-                "input_preview": str(messages[-1].get("content", ""))[:400],
-                "output_preview": text[:400],
-            }
-        )
+        _record(role, model, input_preview, text)
         return text
     except Exception as exc:
         fallback = settings.reasoning_model
         write_log({"agent": role, "model": model, "error": str(exc), "fallback": fallback})
-        if fallback != model and _api_key_for(fallback) and not _missing_keys_message(fallback):
+        can_fallback = (
+            role in _TEXT_ROLES
+            and fallback != model
+            and _api_key_for(fallback)
+            and not _missing_keys_message(fallback)
+        )
+        if can_fallback:
             try:
-                return _complete(fallback, messages, temperature, max_tokens)
+                text = _complete(fallback, messages, temperature, max_tokens)
+                _record(role, fallback, input_preview, text)
+                return text
             except Exception as inner:
-                return f"Model call failed ({role}): {inner}"
-        return f"Model call failed ({role}): {exc}"
+                error_text = f"Model call failed ({role}): {inner}"
+                _record(role, fallback, input_preview, error_text)
+                return error_text
+        error_text = f"Model call failed ({role}): {exc}"
+        _record(role, model, input_preview, error_text)
+        return error_text
 
 
 def chat_vision(prompt: str, image_url_or_data: str) -> str:
