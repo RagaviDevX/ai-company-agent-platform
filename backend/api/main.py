@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 
 from backend.api.schemas import ChatRequest, MemoryRequest, RagRequest, SearchRequest
 from backend.config.settings import settings
@@ -12,7 +13,7 @@ from backend.rag.pipeline import RAGPipeline
 from backend.tools.media import image_to_data_url, transcribe_audio
 from backend.tools.search import web_search
 from backend.utils.logger import read_recent_logs
-from backend.utils.paths import ensure_dirs
+from backend.utils.paths import ensure_dirs, resolve_upload_path
 
 ensure_dirs()
 app = FastAPI(title=settings.app_name, version="1.0.0")
@@ -25,6 +26,32 @@ app.add_middleware(
 
 memory = MemoryStore()
 rag = RAGPipeline()
+
+MAX_UPLOAD_BYTES = settings.max_upload_mb * 1024 * 1024
+
+
+def _check_size(data: bytes) -> None:
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the {settings.max_upload_mb}MB upload limit.",
+        )
+
+
+async def _save_upload(file: UploadFile) -> Path:
+    """Read + persist an UploadFile safely, without blocking the event loop.
+
+    Sanitizes the filename (no path traversal), enforces a size limit, and
+    writes the bytes in a worker thread rather than on the async event loop.
+    """
+    data = await file.read()
+    _check_size(data)
+    try:
+        dest = resolve_upload_path(file.filename or "")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await run_in_threadpool(dest.write_bytes, data)
+    return dest
 
 
 @app.get("/health")
@@ -56,17 +83,16 @@ def chat_endpoint(req: ChatRequest):
 
 @app.post("/upload")
 async def upload(file: UploadFile = File(...)):
-    dest = Path(settings.uploads_dir) / file.filename
-    dest.write_bytes(await file.read())
+    dest = await _save_upload(file)
     suffix = dest.suffix.lower()
     if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
-        memory.add_document(file.filename, "image")
+        memory.add_document(dest.name, "image")
         return {"ok": True, "kind": "image", "path": str(dest)}
     if suffix in {".mp3", ".wav", ".m4a", ".webm", ".ogg"}:
-        memory.add_document(file.filename, "audio")
+        memory.add_document(dest.name, "audio")
         return {"ok": True, "kind": "audio", "path": str(dest)}
     try:
-        info = rag.ingest_file(str(dest))
+        info = await run_in_threadpool(rag.ingest_file, str(dest))
         return {"ok": True, "kind": "document", **info}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -103,19 +129,17 @@ def search(req: SearchRequest):
 
 @app.post("/vision")
 async def vision(prompt: str = Form("Describe this image."), file: UploadFile = File(...)):
-    dest = Path(settings.uploads_dir) / file.filename
-    dest.write_bytes(await file.read())
+    dest = await _save_upload(file)
     data_url = image_to_data_url(str(dest))
-    text = chat_vision(prompt, data_url)
-    return {"analysis": text, "filename": file.filename}
+    text = await run_in_threadpool(chat_vision, prompt, data_url)
+    return {"analysis": text, "filename": dest.name}
 
 
 @app.post("/voice")
 async def voice(file: UploadFile = File(...)):
-    dest = Path(settings.uploads_dir) / file.filename
-    dest.write_bytes(await file.read())
-    text = transcribe_audio(str(dest))
-    return {"transcript": text, "filename": file.filename}
+    dest = await _save_upload(file)
+    text = await run_in_threadpool(transcribe_audio, str(dest))
+    return {"transcript": text, "filename": dest.name}
 
 
 @app.post("/rag")
