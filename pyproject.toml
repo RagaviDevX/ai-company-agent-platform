@@ -1,0 +1,12 @@
+[tool.ruff]
+line-length = 115
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+    "E501",  # line length is handled by formatting, not worth failing CI over
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["backend", "frontend"]
