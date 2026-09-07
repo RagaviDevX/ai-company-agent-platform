@@ -29,3 +29,7 @@ class VisionRequest(BaseModel):
 class RagRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
     limit: int = Field(default=5, ge=1, le=50)
+
+
+class TokenRequest(BaseModel):
+    user_id: int = 1

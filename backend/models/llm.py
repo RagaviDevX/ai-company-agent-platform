@@ -1,8 +1,11 @@
-from typing import Any
+import hashlib
+import json
+from typing import Any, Iterator
 
 import httpx
 from groq import Groq
 
+from backend.cache.cache import get_cache
 from backend.config.settings import settings
 from backend.memory.store import MemoryStore
 from backend.utils.logger import write_log
@@ -131,6 +134,14 @@ def _complete(model: str, messages: list[dict[str, Any]], temperature: float, ma
     return _call_groq(model, messages, temperature, max_tokens)
 
 
+def _cache_key(role: str, model: str, messages: list[dict[str, Any]], temperature: float, max_tokens: int) -> str:
+    payload = json.dumps(
+        {"role": role, "model": model, "messages": messages, "t": temperature, "m": max_tokens},
+        sort_keys=True,
+    )
+    return "llm:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def chat(
     role: str,
     messages: list[dict[str, Any]],
@@ -146,9 +157,22 @@ def chat(
         write_log({"agent": role, "model": model, "error": "missing_api_key"})
         return missing
 
+    # Only exact-duplicate (role, model, messages, params) calls hit the
+    # cache -- fine for repeated identical questions, harmless (a miss)
+    # for anything else. Not applied to chat_stream(): streaming exists
+    # specifically to show partial output as it's generated, and serving
+    # a cached response would either defeat that or need to be faked as a
+    # fake stream, neither of which is worth the complexity here.
+    cache = get_cache()
+    cache_key = _cache_key(role, model, messages, temperature, max_tokens)
+    cached = cache.get_json(cache_key)
+    if cached is not None:
+        return cached
+
     try:
         text = _complete(model, messages, temperature, max_tokens)
         _record(role, model, input_preview, text)
+        cache.set_json(cache_key, text)
         return text
     except Exception as exc:
         fallback = settings.reasoning_model
@@ -163,6 +187,7 @@ def chat(
             try:
                 text = _complete(fallback, messages, temperature, max_tokens)
                 _record(role, fallback, input_preview, text)
+                cache.set_json(cache_key, text)
                 return text
             except Exception as inner:
                 error_text = f"Model call failed ({role}): {inner}"
@@ -172,22 +197,6 @@ def chat(
         _record(role, model, input_preview, error_text)
         return error_text
 
-
-def chat_vision(prompt: str, image_url_or_data: str) -> str:
-    model = settings.vision_model
-    missing = _missing_keys_message(model)
-    if missing:
-        return missing
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": image_url_or_data}},
-            ],
-        }
-    ]
-    return chat("vision", messages)
 
 def chat_stream(
     role: str,
@@ -274,3 +283,20 @@ def chat_stream(
         yield error_text
     finally:
         _record(role, model, input_preview, "".join(chunks))
+
+
+def chat_vision(prompt: str, image_url_or_data: str) -> str:
+    model = settings.vision_model
+    missing = _missing_keys_message(model)
+    if missing:
+        return missing
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": image_url_or_data}},
+            ],
+        }
+    ]
+    return chat("vision", messages)

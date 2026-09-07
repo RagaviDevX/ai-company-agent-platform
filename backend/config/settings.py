@@ -38,8 +38,14 @@ class Settings(BaseSettings):
 
     collection_name: str = "ai_company_docs"
     max_upload_mb: int = 25
+
     redis_url: str = ""  # e.g. redis://localhost:6379/0 -- blank uses the in-memory fallback
     cache_ttl_seconds: int = 600
+
+    auth_enabled: bool = False  # opt-in; see backend/auth/dependencies.py
+    jwt_secret: str = ""
+    jwt_algorithm: str = "HS256"
+    jwt_expires_minutes: int = 1440
 
 
 settings = Settings()
