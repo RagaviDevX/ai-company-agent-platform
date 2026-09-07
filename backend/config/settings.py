@@ -38,6 +38,8 @@ class Settings(BaseSettings):
 
     collection_name: str = "ai_company_docs"
     max_upload_mb: int = 25
+    redis_url: str = ""  # e.g. redis://localhost:6379/0 -- blank uses the in-memory fallback
+    cache_ttl_seconds: int = 600
 
 
 settings = Settings()
